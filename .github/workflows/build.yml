@@ -1,0 +1,34 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+
+jobs:
+  build:
+    name: Compile Library
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: Build libbingus
+        run: make all
+
+      - name: Archive Library
+        uses: actions/upload-artifact@v4
+        with:
+          name: libbingus-${{ github.sha }}
+          path: libbingus.a
+          retention-days: 7
