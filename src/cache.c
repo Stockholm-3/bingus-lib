@@ -39,27 +39,28 @@ typedef struct {
     uint64_t expires_at;   /**< Unix timestamp; 0 = no expiry   */
     uint32_t payload_len;  /**< Bytes of payload following hdr  */
     char key[MAX_KEY_LEN]; /**< NUL-terminated original key     */
-} cache_file_header_t;
+} CacheFileHeader;
 #pragma pack(pop)
 
 typedef struct {
-    cache_config_t cfg;
+    CacheConfig cfg;
     bool initialised;
-} cache_state_t;
+} CacheState;
 
-static cache_state_t s_state = {.initialised = false};
+static CacheState g_s_state = {.initialised = false};
 
-static uint32_t crc32_update(uint32_t crc, const uint8_t *data, size_t len) {
+static uint32_t crc32_update(uint32_t crc, const uint8_t* data, size_t len) {
     crc = ~crc;
     while (len--) {
         crc ^= *data++;
-        for (int i = 0; i < 8; i++)
+        for (int i = 0; i < 8; i++) {
             crc = (crc >> 1) ^ (0xEDB88320UL & -(crc & 1));
+        }
     }
     return ~crc;
 }
 
-static uint32_t fnv1a32(const char *str) {
+static uint32_t fnv1a32(const char* str) {
     uint32_t hash = 0x811C9DC5UL;
     while (*str) {
         hash ^= (uint8_t)*str++;
@@ -69,10 +70,9 @@ static uint32_t fnv1a32(const char *str) {
 }
 
 /** Build the full file path for a given key. */
-static void build_path(const char *key, char *out, size_t out_sz) {
+static void build_path(const char* key, char* out, size_t out_sz) {
     uint32_t h = fnv1a32(key);
-    snprintf(out, out_sz, "%s/%08x%s", s_state.cfg.root_path, h,
-             CACHE_FILE_EXT);
+    snprintf(out, out_sz, "%s/%08x%s", g_s_state.cfg.root_path, h, CACHE_FILE_EXT);
 }
 
 /** Return current time as a Unix timestamp.
@@ -82,80 +82,88 @@ static void build_path(const char *key, char *out, size_t out_sz) {
 static uint64_t now_sec(void) { return (uint64_t)time(NULL); }
 
 /** Allocate memory using the configured allocator. */
-static void *cache_malloc(size_t sz) {
-    if (s_state.cfg.alloc.malloc_fn)
-        return s_state.cfg.alloc.malloc_fn(sz);
+static void* cache_malloc(size_t sz) {
+    if (g_s_state.cfg.alloc.malloc_fn) {
+        return g_s_state.cfg.alloc.malloc_fn(sz);
+    }
     return malloc(sz);
 }
 
 /** Free memory using the configured allocator. */
-static void cache_free_internal(void *ptr) {
-    if (!ptr)
+static void cache_free_internal(void* ptr) {
+    if (!ptr) {
         return;
-    if (s_state.cfg.alloc.free_fn)
-        s_state.cfg.alloc.free_fn(ptr);
-    else
+    }
+    if (g_s_state.cfg.alloc.free_fn) {
+        g_s_state.cfg.alloc.free_fn(ptr);
+    } else {
         free(ptr);
+    }
 }
 
-int cache_init(const cache_config_t *config) {
-    if (!config || !config->io || !config->root_path)
+int cache_init(const CacheConfig* config) {
+    if (!config || !config->io || !config->root_path) {
         return CACHE_ERR_PARAM;
+    }
 
-    if (s_state.initialised)
+    if (g_s_state.initialised) {
         return CACHE_OK; /* idempotent */
+    }
 
-    s_state.cfg = *config;
-    s_state.initialised = true;
+    g_s_state.cfg         = *config;
+    g_s_state.initialised = true;
     return CACHE_OK;
 }
 
 void cache_deinit(void) {
-    s_state.initialised = false;
-    memset(&s_state.cfg, 0, sizeof(s_state.cfg));
+    g_s_state.initialised = false;
+    memset(&g_s_state.cfg, 0, sizeof(g_s_state.cfg));
 }
 
-int cache_put(const char *key, const void *data, size_t len, uint32_t ttl_sec) {
-    if (!s_state.initialised)
+int cache_put(const char* key, const void* data, size_t len, uint32_t ttl_sec) {
+    if (!g_s_state.initialised) {
         return CACHE_ERR_INIT;
-    if (!key || (!data && len > 0))
+    }
+    if (!key || (!data && len > 0)) {
         return CACHE_ERR_PARAM;
+    }
 
-    const cache_io_t *io = s_state.cfg.io;
+    const CacheIo* io = g_s_state.cfg.io;
 
-    cache_file_header_t hdr;
+    CacheFileHeader hdr;
     memset(&hdr, 0, sizeof(hdr));
 
-    hdr.magic = HEADER_MAGIC;
-    hdr.created_at = now_sec();
+    hdr.magic       = HEADER_MAGIC;
+    hdr.created_at  = now_sec();
     hdr.payload_len = (uint32_t)len;
     strncpy(hdr.key, key, MAX_KEY_LEN - 1);
 
-    if (ttl_sec == CACHE_TTL_INFINITE &&
-        s_state.cfg.default_ttl_sec != CACHE_TTL_INFINITE)
-        ttl_sec = s_state.cfg.default_ttl_sec;
+    if (ttl_sec == CACHE_TTL_INFINITE && g_s_state.cfg.default_ttl_sec != CACHE_TTL_INFINITE) {
+        ttl_sec = g_s_state.cfg.default_ttl_sec;
+    }
 
-    hdr.expires_at =
-        (ttl_sec == CACHE_TTL_INFINITE) ? 0 : hdr.created_at + ttl_sec;
+    hdr.expires_at = (ttl_sec == CACHE_TTL_INFINITE) ? 0 : hdr.created_at + ttl_sec;
 
     /* CRC covers everything after the magic+crc fields */
-    uint32_t crc = 0;
-    const uint8_t *hdr_body =
-        (const uint8_t *)&hdr + sizeof(hdr.magic) + sizeof(hdr.crc32);
-    size_t hdr_body_len = sizeof(hdr) - sizeof(hdr.magic) - sizeof(hdr.crc32);
-    crc = crc32_update(crc, hdr_body, hdr_body_len);
-    if (len > 0)
-        crc = crc32_update(crc, (const uint8_t *)data, len);
+    uint32_t crc            = 0;
+    const uint8_t* hdr_body = (const uint8_t*)&hdr + sizeof(hdr.magic) + sizeof(hdr.crc32);
+    size_t hdr_body_len     = sizeof(hdr) - sizeof(hdr.magic) - sizeof(hdr.crc32);
+    crc                     = crc32_update(crc, hdr_body, hdr_body_len);
+    if (len > 0) {
+        crc = crc32_update(crc, (const uint8_t*)data, len);
+    }
     hdr.crc32 = crc;
 
     size_t total = sizeof(hdr) + len;
-    uint8_t *buf = (uint8_t *)cache_malloc(total);
-    if (!buf)
+    uint8_t* buf = (uint8_t*)cache_malloc(total);
+    if (!buf) {
         return CACHE_ERR_NOMEM;
+    }
 
     memcpy(buf, &hdr, sizeof(hdr));
-    if (len > 0)
+    if (len > 0) {
         memcpy(buf + sizeof(hdr), data, len);
+    }
 
     char path[MAX_PATH_LEN];
     build_path(key, path, sizeof(path));
@@ -166,38 +174,43 @@ int cache_put(const char *key, const void *data, size_t len, uint32_t ttl_sec) {
     return (rc == 0) ? CACHE_OK : CACHE_ERR_IO;
 }
 
-int cache_get_alloc(const char *key, void **out_data, size_t *out_len) {
-    if (!s_state.initialised)
+int cache_get_alloc(const char* key, void** out_data, size_t* out_len) {
+    if (!g_s_state.initialised) {
         return CACHE_ERR_INIT;
-    if (!key || !out_data || !out_len)
+    }
+    if (!key || !out_data || !out_len) {
         return CACHE_ERR_PARAM;
+    }
 
     *out_data = NULL;
-    *out_len = 0;
+    *out_len  = 0;
 
-    const cache_io_t *io = s_state.cfg.io;
+    const CacheIo* io = g_s_state.cfg.io;
 
     char path[MAX_PATH_LEN];
     build_path(key, path, sizeof(path));
 
-    if (!io->exists(path))
+    if (!io->exists(path)) {
         return CACHE_ERR_NOT_FOUND;
+    }
 
     long file_sz = io->get_size(path);
-    if (file_sz < (long)sizeof(cache_file_header_t))
+    if (file_sz < (long)sizeof(CacheFileHeader)) {
         return CACHE_ERR_CORRUPT;
+    }
 
-    uint8_t *raw = (uint8_t *)cache_malloc((size_t)file_sz);
-    if (!raw)
+    uint8_t* raw = (uint8_t*)cache_malloc((size_t)file_sz);
+    if (!raw) {
         return CACHE_ERR_NOMEM;
+    }
 
     int bytes_read = io->read(path, raw, (size_t)file_sz);
-    if (bytes_read < (int)sizeof(cache_file_header_t)) {
+    if (bytes_read < (int)sizeof(CacheFileHeader)) {
         cache_free_internal(raw);
         return CACHE_ERR_IO;
     }
 
-    cache_file_header_t hdr;
+    CacheFileHeader hdr;
     memcpy(&hdr, raw, sizeof(hdr));
 
     if (hdr.magic != HEADER_MAGIC) {
@@ -211,16 +224,15 @@ int cache_get_alloc(const char *key, void **out_data, size_t *out_len) {
         return CACHE_ERR_NOT_FOUND;
     }
 
-    uint32_t stored_crc = hdr.crc32;
-    hdr.crc32 = 0; /* zero out before recomputing */
-    uint32_t calc_crc = 0;
-    const uint8_t *hdr_body =
-        (const uint8_t *)&hdr + sizeof(hdr.magic) + sizeof(hdr.crc32);
-    size_t hdr_body_len = sizeof(hdr) - sizeof(hdr.magic) - sizeof(hdr.crc32);
-    calc_crc = crc32_update(calc_crc, hdr_body, hdr_body_len);
-    if (hdr.payload_len > 0)
-        calc_crc = crc32_update(calc_crc, raw + sizeof(cache_file_header_t),
-                                hdr.payload_len);
+    uint32_t stored_crc     = hdr.crc32;
+    hdr.crc32               = 0; /* zero out before recomputing */
+    uint32_t calc_crc       = 0;
+    const uint8_t* hdr_body = (const uint8_t*)&hdr + sizeof(hdr.magic) + sizeof(hdr.crc32);
+    size_t hdr_body_len     = sizeof(hdr) - sizeof(hdr.magic) - sizeof(hdr.crc32);
+    calc_crc                = crc32_update(calc_crc, hdr_body, hdr_body_len);
+    if (hdr.payload_len > 0) {
+        calc_crc = crc32_update(calc_crc, raw + sizeof(CacheFileHeader), hdr.payload_len);
+    }
 
     if (calc_crc != stored_crc) {
         cache_free_internal(raw);
@@ -235,78 +247,82 @@ int cache_get_alloc(const char *key, void **out_data, size_t *out_len) {
     }
 
     size_t payload_len = hdr.payload_len;
-    uint8_t *payload =
-        (uint8_t *)cache_malloc(payload_len + 1); /* +1 for safe NUL */
+    uint8_t* payload   = (uint8_t*)cache_malloc(payload_len + 1); /* +1 for safe NUL */
     if (!payload) {
         cache_free_internal(raw);
         return CACHE_ERR_NOMEM;
     }
 
-    memcpy(payload, raw + sizeof(cache_file_header_t), payload_len);
+    memcpy(payload, raw + sizeof(CacheFileHeader), payload_len);
     payload[payload_len] = '\0'; /* convenience NUL; not counted in out_len */
 
     cache_free_internal(raw);
 
     *out_data = payload;
-    *out_len = payload_len;
+    *out_len  = payload_len;
     return CACHE_OK;
 }
 
-void cache_free(void *ptr) { cache_free_internal(ptr); }
+void cache_free(void* ptr) { cache_free_internal(ptr); }
 
-int cache_remove(const char *key) {
-    if (!s_state.initialised)
+int cache_remove(const char* key) {
+    if (!g_s_state.initialised) {
         return CACHE_ERR_INIT;
-    if (!key)
+    }
+    if (!key) {
         return CACHE_ERR_PARAM;
+    }
 
-    const cache_io_t *io = s_state.cfg.io;
+    const CacheIo* io = g_s_state.cfg.io;
     char path[MAX_PATH_LEN];
     build_path(key, path, sizeof(path));
 
-    if (!io->exists(path))
+    if (!io->exists(path)) {
         return CACHE_ERR_NOT_FOUND;
+    }
 
     return (io->remove(path) == 0) ? CACHE_OK : CACHE_ERR_IO;
 }
 
 typedef struct {
-    const cache_io_t *io;
-    const char *root;
+    const CacheIo* io;
+    const char* root;
     bool purge_all; /**< If true, remove everything       */
     int removed;    /**< Running count of removed entries */
-} cleanup_ctx_t;
+} CleanupCtxT;
 
-static void cleanup_cb(const char *filename, void *user_ctx) {
-    cleanup_ctx_t *ctx = (cleanup_ctx_t *)user_ctx;
+static void cleanup_cb(const char* filename, void* user_ctx) {
+    CleanupCtxT* ctx = (CleanupCtxT*)user_ctx;
 
     /* Only process our own files */
-    size_t fn_len = strlen(filename);
+    size_t fn_len  = strlen(filename);
     size_t ext_len = strlen(CACHE_FILE_EXT);
-    if (fn_len < ext_len ||
-        strcmp(filename + fn_len - ext_len, CACHE_FILE_EXT) != 0)
+    if (fn_len < ext_len || strcmp(filename + fn_len - ext_len, CACHE_FILE_EXT) != 0) {
         return;
+    }
 
     /* Build full path */
     char path[MAX_PATH_LEN];
     snprintf(path, sizeof(path), "%s/%s", ctx->root, filename);
 
     if (ctx->purge_all) {
-        if (ctx->io->remove(path) == 0)
+        if (ctx->io->remove(path) == 0) {
             ctx->removed++;
+        }
         return;
     }
 
     /* Read header only to check expiry — avoid reading full payload */
     long file_sz = ctx->io->get_size(path);
-    if (file_sz < (long)sizeof(cache_file_header_t)) {
+    if (file_sz < (long)sizeof(CacheFileHeader)) {
         /* Corrupted file — remove it */
-        if (ctx->io->remove(path) == 0)
+        if (ctx->io->remove(path) == 0) {
             ctx->removed++;
+        }
         return;
     }
 
-    cache_file_header_t hdr;
+    CacheFileHeader hdr;
     int n = ctx->io->read(path, &hdr, sizeof(hdr));
     if (n < (int)sizeof(hdr) || hdr.magic != HEADER_MAGIC) {
         ctx->io->remove(path);
@@ -315,43 +331,48 @@ static void cleanup_cb(const char *filename, void *user_ctx) {
     }
 
     if (hdr.expires_at != 0 && now_sec() >= hdr.expires_at) {
-        if (ctx->io->remove(path) == 0)
+        if (ctx->io->remove(path) == 0) {
             ctx->removed++;
+        }
     }
 }
 
 int cache_cleanup(void) {
-    if (!s_state.initialised)
+    if (!g_s_state.initialised) {
         return CACHE_ERR_INIT;
+    }
 
-    cleanup_ctx_t ctx = {
-        .io = s_state.cfg.io,
-        .root = s_state.cfg.root_path,
+    CleanupCtxT ctx = {
+        .io        = g_s_state.cfg.io,
+        .root      = g_s_state.cfg.root_path,
         .purge_all = false,
-        .removed = 0,
+        .removed   = 0,
     };
 
-    int rc = s_state.cfg.io->list_dir(s_state.cfg.root_path, cleanup_cb, &ctx);
-    if (rc != 0)
+    int rc = g_s_state.cfg.io->list_dir(g_s_state.cfg.root_path, cleanup_cb, &ctx);
+    if (rc != 0) {
         return CACHE_ERR_IO;
+    }
 
     return ctx.removed;
 }
 
 int cache_purge_all(void) {
-    if (!s_state.initialised)
+    if (!g_s_state.initialised) {
         return CACHE_ERR_INIT;
+    }
 
-    cleanup_ctx_t ctx = {
-        .io = s_state.cfg.io,
-        .root = s_state.cfg.root_path,
+    CleanupCtxT ctx = {
+        .io        = g_s_state.cfg.io,
+        .root      = g_s_state.cfg.root_path,
         .purge_all = true,
-        .removed = 0,
+        .removed   = 0,
     };
 
-    int rc = s_state.cfg.io->list_dir(s_state.cfg.root_path, cleanup_cb, &ctx);
-    if (rc != 0)
+    int rc = g_s_state.cfg.io->list_dir(g_s_state.cfg.root_path, cleanup_cb, &ctx);
+    if (rc != 0) {
         return CACHE_ERR_IO;
+    }
 
     return ctx.removed;
 }

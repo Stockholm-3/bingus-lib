@@ -1,0 +1,58 @@
+# ----------------------------------------
+# Base Style
+# ----------------------------------------
+BasedOnStyle: LLVM
+
+# ----------------------------------------
+# Indentation
+# ----------------------------------------
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+
+# ----------------------------------------
+# Line Length
+# ----------------------------------------
+ColumnLimit: 100
+
+# ----------------------------------------
+# Braces (K&R style)
+# ----------------------------------------
+BreakBeforeBraces: Attach
+
+# ----------------------------------------
+# Functions
+# ----------------------------------------
+AlwaysBreakAfterReturnType: None
+AlwaysBreakAfterDefinitionReturnType: None
+
+# ----------------------------------------
+# Pointers
+# ----------------------------------------
+PointerAlignment: Left
+
+# ----------------------------------------
+# Control Statements
+# ----------------------------------------
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# ----------------------------------------
+# Alignment
+# ----------------------------------------
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: true
+AlignConsecutiveDeclarations: false
+AlignOperands: true
+AlignTrailingComments: true
+
+# ----------------------------------------
+# Preprocessor
+# ----------------------------------------
+IndentPPDirectives: AfterHash
+
+# ----------------------------------------
+# Includes
+# ----------------------------------------
+SortIncludes: true
+IncludeBlocks: Regroup

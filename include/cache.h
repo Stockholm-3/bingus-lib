@@ -38,15 +38,15 @@ extern "C" {
 #define CACHE_TTL_INFINITE 0U
 
 typedef enum {
-    CACHE_OK = 0,             /**< Success                               */
-    CACHE_ERR_PARAM = -1,     /**< NULL or invalid argument              */
+    CACHE_OK            = 0,  /**< Success                               */
+    CACHE_ERR_PARAM     = -1, /**< NULL or invalid argument              */
     CACHE_ERR_NOT_FOUND = -2, /**< Key does not exist in the cache       */
-    CACHE_ERR_EXPIRED = -3,   /**< Entry exists but TTL has elapsed      */
-    CACHE_ERR_IO = -4,        /**< Underlying I/O function failed        */
-    CACHE_ERR_NOMEM = -5,     /**< Allocator returned NULL               */
-    CACHE_ERR_CORRUPT = -6,   /**< Header magic / checksum mismatch      */
-    CACHE_ERR_INIT = -7,      /**< Module not initialised                */
-} cache_err_t;
+    CACHE_ERR_EXPIRED   = -3, /**< Entry exists but TTL has elapsed      */
+    CACHE_ERR_IO        = -4, /**< Underlying I/O function failed        */
+    CACHE_ERR_NOMEM     = -5, /**< Allocator returned NULL               */
+    CACHE_ERR_CORRUPT   = -6, /**< Header magic / checksum mismatch      */
+    CACHE_ERR_INIT      = -7, /**< Module not initialised                */
+} CacheErr;
 
 /**
  * @brief I/O back-end provided by the caller. HAL
@@ -55,22 +55,22 @@ typedef enum {
  */
 typedef struct {
     /** Returns true if the file at @p path exists. */
-    bool (*exists)(const char *path);
+    bool (*exists)(const char* path);
 
     /** Write @p len bytes from @p data to @p path (create or overwrite).
      *  Returns 0 on success, negative on error. */
-    int (*write)(const char *path, const void *data, size_t len);
+    int (*write)(const char* path, const void* data, size_t len);
 
     /** Read up to @p len bytes from @p path into @p buf.
      *  Returns number of bytes actually read, or negative on error. */
-    int (*read)(const char *path, void *buf, size_t len);
+    int (*read)(const char* path, void* buf, size_t len);
 
     /** Delete the file at @p path.
      *  Returns 0 on success, negative on error. */
-    int (*remove)(const char *path);
+    int (*remove)(const char* path);
 
     /** Return the byte size of the file at @p path, or negative on error. */
-    long (*get_size)(const char *path);
+    long (*get_size)(const char* path);
 
     /**
      * Enumerate files directly inside @p dir_path.
@@ -78,10 +78,9 @@ typedef struct {
      * and the opaque @p user_ctx pointer.
      * Returns 0 on success, negative on error.
      */
-    int (*list_dir)(const char *dir_path,
-                    void (*cb)(const char *filename, void *user_ctx),
-                    void *user_ctx);
-} cache_io_t;
+    int (*list_dir)(const char* dir_path, void (*cb)(const char* filename, void* user_ctx),
+                    void* user_ctx);
+} CacheIo;
 
 /**
  * @brief Custom allocator pair.
@@ -90,16 +89,16 @@ typedef struct {
  * Leave both pointers NULL to use the standard malloc / free.
  */
 typedef struct {
-    void *(*malloc_fn)(size_t size);
-    void (*free_fn)(void *ptr);
-} cache_alloc_t;
+    void* (*malloc_fn)(size_t size);
+    void (*free_fn)(void* ptr);
+} CacheAlloc;
 
 typedef struct {
     /** Root directory where cache files are written (no trailing slash). */
-    const char *root_path;
+    const char* root_path;
 
     /** Mandatory I/O back-end. */
-    const cache_io_t *io;
+    const CacheIo* io;
 
     /** TTL used by cache_put() when the caller passes CACHE_TTL_INFINITE
      *  but the implementation wants a global fallback.  Set to
@@ -107,8 +106,8 @@ typedef struct {
     uint32_t default_ttl_sec;
 
     /** Optional allocator.  If both fields are NULL, stdlib is used. */
-    cache_alloc_t alloc;
-} cache_config_t;
+    CacheAlloc alloc;
+} CacheConfig;
 
 /**
  * @brief Initialise the cache engine.
@@ -119,7 +118,7 @@ typedef struct {
  * @param config  Non-NULL configuration struct (copied internally).
  * @return CACHE_OK or CACHE_ERR_PARAM.
  */
-int cache_init(const cache_config_t *config);
+int cache_init(const CacheConfig* config);
 
 /**
  * @brief Tear down the cache engine.
@@ -142,7 +141,7 @@ void cache_deinit(void);
  *                 using a monotonic or epoch timestamp provided by the HAL.
  * @return CACHE_OK, CACHE_ERR_PARAM, or CACHE_ERR_IO.
  */
-int cache_put(const char *key, const void *data, size_t len, uint32_t ttl_sec);
+int cache_put(const char* key, const void* data, size_t len, uint32_t ttl_sec);
 
 /**
  * @brief Retrieve a cached entry, allocating the output buffer automatically.
@@ -158,7 +157,7 @@ int cache_put(const char *key, const void *data, size_t len, uint32_t ttl_sec);
  * @return CACHE_OK, CACHE_ERR_PARAM, CACHE_ERR_NOT_FOUND, CACHE_ERR_EXPIRED,
  *         CACHE_ERR_CORRUPT, CACHE_ERR_NOMEM, or CACHE_ERR_IO.
  */
-int cache_get_alloc(const char *key, void **out_data, size_t *out_len);
+int cache_get_alloc(const char* key, void** out_data, size_t* out_len);
 
 /**
  * @brief Free a buffer that was returned by cache_get_alloc().
@@ -168,7 +167,7 @@ int cache_get_alloc(const char *key, void **out_data, size_t *out_len);
  *
  * @param ptr  Pointer previously returned via out_data.  NULL is a no-op.
  */
-void cache_free(void *ptr);
+void cache_free(void* ptr);
 
 /**
  * @brief Delete a specific cache entry.
@@ -176,7 +175,7 @@ void cache_free(void *ptr);
  * @param key  Unique identifier string.
  * @return CACHE_OK, CACHE_ERR_NOT_FOUND, or CACHE_ERR_IO.
  */
-int cache_remove(const char *key);
+int cache_remove(const char* key);
 
 /**
  * @brief Scan the cache directory and delete all expired entries.

@@ -35,3 +35,38 @@ clean:
 	rm -rf $(OBJ_DIR) $(LIBNAME)
 
 .PHONY: all clean
+
+# Tools
+FORMAT_TOOL := clang-format
+LINT_TOOL   := clang-tidy
+
+# Find all source and header files for formatting/linting
+ALL_FILES   := $(SRCS) $(wildcard $(INC_DIR)/*.h)
+# Filter for clang-tidy to look at project headers
+LINT_FILTER := -header-filter='include/.*'
+
+# ------------------------------------------------------------------------------
+# Formatting
+# ------------------------------------------------------------------------------
+
+format:
+	@echo "Formatting code..."
+	@$(FORMAT_TOOL) -i $(ALL_FILES)
+
+format-check:
+	@echo "Checking formatting..."
+	@$(FORMAT_TOOL) --dry-run --Werror $(ALL_FILES)
+
+# ------------------------------------------------------------------------------
+# Linting
+# ------------------------------------------------------------------------------
+
+lint:
+	@echo "Running linter..."
+	@$(LINT_TOOL) $(SRCS) $(LINT_FILTER) -- -I$(INC_DIR)
+
+lint-fix:
+	@echo "Attempting to fix lint errors..."
+	@$(LINT_TOOL) -fix $(SRCS) $(LINT_FILTER) -- -I$(INC_DIR)
+
+.PHONY: all clean format format-check lint lint-fix
