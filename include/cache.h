@@ -145,7 +145,7 @@ typedef struct {
  * ---------------------------------------------------------------------- */
 
 /** Opaque pointer to an independent cache instance. */
-typedef struct cache_instance* CacheHandle;
+typedef struct CacheInstance* CacheHandle;
 
 /* =========================================================================
  * Handle-based API  — use when you need more than one cache instance

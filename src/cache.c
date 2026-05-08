@@ -50,7 +50,7 @@ typedef struct {
 } CacheFileHeader;
 #pragma pack(pop)
 
-struct cache_instance {
+struct CacheInstance {
     CacheConfig cfg;
 };
 
