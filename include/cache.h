@@ -4,7 +4,7 @@
  *
  * Designed to run on any target that can provide a small set of I/O function
  * pointers: embedded MCUs (ESP-IDF / FreeRTOS), Linux, Windows, etc.
- * All platform specifics are isolated behind cache_io_t; the caller owns that
+ * All platform specifics are isolated behind CacheIo; the caller owns that
  * abstraction.
  *
  * Multi-instance vs. global convenience API
@@ -13,7 +13,7 @@
  *
  *  (A) Handle-based — create as many independent caches as you need:
  *
- *      cache_handle_t h;
+ *      CacheHandle h;
  *      cache_create(&cfg, &h);
  *      cache_hput(h, "key", data, len, ttl);
  *      cache_hdestroy(h);
@@ -22,7 +22,7 @@
  *      short-name wrappers (cache_put / cache_get_alloc / …) from
  *      anywhere in the project without passing a handle:
  *
- *      cache_init(&cfg);          // sets the global instance
+ *      cache_init(&cfg);
  *      cache_put("key", …);
  *      cache_deinit();
  *
@@ -53,14 +53,14 @@ extern "C" {
  * ---------------------------------------------------------------------- */
 
 typedef enum {
-    CACHE_OK            = 0,  /**< Success                               */
-    CACHE_ERR_PARAM     = -1, /**< NULL or invalid argument              */
-    CACHE_ERR_NOT_FOUND = -2, /**< Key does not exist in the cache       */
-    CACHE_ERR_EXPIRED   = -3, /**< Entry exists but TTL has elapsed      */
-    CACHE_ERR_IO        = -4, /**< Underlying I/O function failed        */
-    CACHE_ERR_NOMEM     = -5, /**< Allocator returned NULL               */
-    CACHE_ERR_CORRUPT   = -6, /**< Header magic / checksum mismatch      */
-    CACHE_ERR_INIT      = -7, /**< Module not initialised / bad handle   */
+    CACHE_OK            = 0,  /**< Success                             */
+    CACHE_ERR_PARAM     = -1, /**< NULL or invalid argument            */
+    CACHE_ERR_NOT_FOUND = -2, /**< Key does not exist in the cache     */
+    CACHE_ERR_EXPIRED   = -3, /**< Entry exists but TTL has elapsed    */
+    CACHE_ERR_IO        = -4, /**< Underlying I/O function failed      */
+    CACHE_ERR_NOMEM     = -5, /**< Allocator returned NULL             */
+    CACHE_ERR_CORRUPT   = -6, /**< Header magic / checksum mismatch   */
+    CACHE_ERR_INIT      = -7, /**< Module not initialised / bad handle */
 } CacheErr;
 
 /* -------------------------------------------------------------------------
@@ -70,9 +70,9 @@ typedef enum {
 /**
  * @brief I/O back-end provided by the caller.
  *
- * Every pointer is mandatory.  Return 0 / true for success.
+ * Every pointer is mandatory. Return 0 / true for success.
  * read() returns the number of bytes actually read (>= 0), or negative on
- * error.  All other mutating functions return 0 on success.
+ * error. All other mutating functions return 0 on success.
  */
 typedef struct {
     /** Returns true if the file at @p path exists. */
@@ -111,7 +111,7 @@ typedef struct {
  * @brief Optional custom allocator pair.
  *
  * Useful on targets where heap regions differ (e.g. IRAM vs SPIRAM on
- * ESP32).  Leave both fields NULL to use the standard malloc / free.
+ * ESP32). Leave both fields NULL to use the standard malloc / free.
  */
 typedef struct {
     void* (*malloc_fn)(size_t size);
@@ -131,7 +131,7 @@ typedef struct {
 
     /**
      * Default TTL applied when cache_hput() is called with
-     * CACHE_TTL_INFINITE.  Set to CACHE_TTL_INFINITE to truly disable
+     * CACHE_TTL_INFINITE. Set to CACHE_TTL_INFINITE to truly disable
      * expiry unless the caller supplies an explicit non-zero TTL.
      */
     uint32_t default_ttl_sec;
@@ -141,14 +141,17 @@ typedef struct {
 } CacheConfig;
 
 /* -------------------------------------------------------------------------
- * Opaque handle  (multi-instance API)
+ * Opaque handle (multi-instance API)
  * ---------------------------------------------------------------------- */
 
-/** Opaque pointer to an independent cache instance. */
+/**
+ * Opaque pointer to an independent cache instance.
+ * The struct body is defined only in cache.c.
+ */
 typedef struct CacheInstance* CacheHandle;
 
 /* =========================================================================
- * Handle-based API  — use when you need more than one cache instance
+ * Handle-based API — use when you need more than one cache instance
  * ====================================================================== */
 
 /**
@@ -166,7 +169,7 @@ int cache_create(const CacheConfig* config, CacheHandle* out_handle);
  * Does NOT delete cached files on disk; call cache_hpurge_all() first if
  * that is desired.
  *
- * @param handle  Handle returned by cache_create().  NULL is a no-op.
+ * @param handle  Handle returned by cache_create(). NULL is a no-op.
  */
 void cache_hdestroy(CacheHandle handle);
 
@@ -209,7 +212,7 @@ int cache_hget_alloc(CacheHandle handle, const char* key, void** out_data, size_
  * allocator (stdlib or custom) is invoked.
  *
  * @param handle  The instance whose allocator should be used.
- * @param ptr     Buffer to release.  NULL is a no-op.
+ * @param ptr     Buffer to release. NULL is a no-op.
  */
 void cache_hfree(CacheHandle handle, void* ptr);
 
@@ -226,21 +229,21 @@ int cache_hremove(CacheHandle handle, const char* key);
  *
  * Entries stored with CACHE_TTL_INFINITE are left untouched.
  *
- * @return Number of entries removed on success, or a negative cache_err_t.
+ * @return Number of entries removed on success, or a negative CacheErr.
  */
 int cache_hcleanup(CacheHandle handle);
 
 /**
  * @brief Delete every entry managed by a cache instance.
  *
- * @return Number of entries removed on success, or a negative cache_err_t.
+ * @return Number of entries removed on success, or a negative CacheErr.
  */
 int cache_hpurge_all(CacheHandle handle);
 
 /* =========================================================================
  * Global singleton API
  *
- * A single shared instance initialised with cache_init().  Any translation
+ * A single shared instance initialised with cache_init(). Any translation
  * unit can call cache_put / cache_get_alloc / … without a handle after that.
  * These are thin wrappers around the handle-based functions above.
  * ====================================================================== */
@@ -263,7 +266,7 @@ int cache_init(const CacheConfig* config);
  */
 void cache_deinit(void);
 
-/** @brief cache_put on the global instance.   @see cache_hput        */
+/** @brief cache_put on the global instance.      @see cache_hput       */
 int cache_put(const char* key, const void* data, size_t len, uint32_t ttl_sec);
 
 /** @brief cache_get_alloc on the global instance. @see cache_hget_alloc
@@ -273,10 +276,10 @@ int cache_get_alloc(const char* key, void** out_data, size_t* out_len);
 /** @brief Free a buffer returned by cache_get_alloc(). @see cache_hfree */
 void cache_free(void* ptr);
 
-/** @brief cache_remove on the global instance.  @see cache_hremove   */
+/** @brief cache_remove on the global instance.   @see cache_hremove    */
 int cache_remove(const char* key);
 
-/** @brief cache_cleanup on the global instance. @see cache_hcleanup  */
+/** @brief cache_cleanup on the global instance.  @see cache_hcleanup   */
 int cache_cleanup(void);
 
 /** @brief cache_purge_all on the global instance. @see cache_hpurge_all */
