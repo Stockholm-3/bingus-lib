@@ -24,6 +24,7 @@
 
 #include "cache.h"
 
+#include <inttypes.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -106,7 +107,7 @@ static uint32_t fnv1a32(const char* str) {
 
 static void inst_build_path(const struct CacheInstance* inst, const char* key, char* out,
                             size_t out_sz) {
-    snprintf(out, out_sz, "%s/%08x%s", inst->cfg.root_path, fnv1a32(key), CACHE_FILE_EXT);
+    snprintf(out, out_sz, "%s/%08" PRIx32 "%s", inst->cfg.root_path, fnv1a32(key), CACHE_FILE_EXT);
 }
 
 static void* inst_malloc(const struct CacheInstance* inst, size_t sz) {
@@ -346,7 +347,10 @@ static void cleanup_cb(const char* filename, void* user_ctx) {
     }
 
     char path[MAX_PATH_LEN];
-    snprintf(path, sizeof(path), "%s/%s", ctx->inst->cfg.root_path, filename);
+    int written = snprintf(path, sizeof(path), "%s/%s", ctx->inst->cfg.root_path, filename);
+    if (written < 0 || (size_t)written >= sizeof(path)) {
+        return;
+    }
 
     if (ctx->purge_all) {
         if (ctx->inst->cfg.io->remove(path) == 0) {
