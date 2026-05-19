@@ -1,2 +1,2 @@
 # bingus-lib
-C lib that is good like bingus
+C lib that is good like bingus.
